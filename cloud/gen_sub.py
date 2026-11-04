@@ -240,19 +240,40 @@ def main():
         log(f"延迟过滤跳过：<=2500ms 仅 {len(fast_enough)} 个，放宽标准")
 
     alive.sort(key=lambda n: n["latency"])
-    fastest = alive[:KEEP_FASTEST]
 
-    rest = [n for n in alive if n not in fastest]
-    rest.sort(key=lambda n: stable_hash(n["ip"], seed))
-    picked = fastest + rest[: max(0, NODE_COUNT - len(fastest))]
+    # 采样策略：限制同一 /16 网段数量，避免某一整段在国内不可达时批量失效；
+    # 同时优先选用 Cloudflare 官方段（国内可达性显著优于第三方中转段）。
+    MAX_PER_NET = 2
+    CF_QUOTA = int(NODE_COUNT * 0.65)
+    picked = []
+    net_count = {}
 
-    # 不足则从最快列表补足（允许复用，但优先保持不重复）
+    def fill(pool, stop_at):
+        for n in pool:
+            if len(picked) >= stop_at:
+                return
+            key = ".".join(n["ip"].split(".")[:2])
+            if net_count.get(key, 0) >= MAX_PER_NET:
+                continue
+            if n in picked:
+                continue
+            net_count[key] = net_count.get(key, 0) + 1
+            picked.append(n)
+
+    cf_alive = [n for n in alive if n["cf"]]
+    other_alive = [n for n in alive if not n["cf"]]
+    fill(cf_alive, CF_QUOTA)
+    fill(other_alive, NODE_COUNT)
+
+    # 仍不足时放宽网段约束补齐
     if len(picked) < NODE_COUNT:
         for n in alive:
             if len(picked) >= NODE_COUNT:
                 break
             if n not in picked:
                 picked.append(n)
+
+    log(f"网段分布：{len(net_count)} 个 /16，单段最多 {MAX_PER_NET} 个；CF 官方段 {sum(1 for n in picked if n['cf'])} 个")
 
     links = [build_link(n, i) for i, n in enumerate(picked)]
     body = "\n".join(links) + "\n"
