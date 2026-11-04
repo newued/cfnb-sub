@@ -27,6 +27,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.request import Request, urlopen
 
 # ---------------- 配置 ----------------
+# 生成器版本，用于追溯订阅由哪一版逻辑产出
+GEN_VERSION = "v2026.11.04-1"
 SOURCES = [
     "https://zip.cm.edu.kg/all.txt",
     "https://countrymerge.pages.dev/all.txt",

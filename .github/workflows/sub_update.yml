@@ -2,8 +2,10 @@ name: Auto Update Subscription
 
 on:
   schedule:
-    # 每 30 分钟运行（UTC）。避开整点高峰，错开为 :07 / :37
-    - cron: "7,37 * * * *"
+    # 兜底触发：每小时 :22 分。主节奏由 Cloudflare Worker cron（:07/:37）负责，
+    # 此处刻意错开，避免与 Worker 同时触发导致两个 job 抢着 push。
+    # 若 Worker 的 GitHub Token 失效，这条 schedule 仍能保住更新不中断。
+    - cron: "22 * * * *"
   workflow_dispatch:
   push:
     paths:
