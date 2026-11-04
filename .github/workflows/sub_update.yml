@@ -41,10 +41,10 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- sub_final.txt; then
+          git add sub_final.txt
+          if git diff --cached --quiet; then
             echo "订阅内容无变化，跳过提交"
             exit 0
           fi
-          git add sub_final.txt
           git commit -m "chore: auto update subscription $(date -u +%Y-%m-%dT%H:%MZ)"
           git push
