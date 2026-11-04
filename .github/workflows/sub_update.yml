@@ -1,0 +1,50 @@
+name: Auto Update Subscription
+
+on:
+  schedule:
+    # 每 30 分钟运行（UTC）。避开整点高峰，错开为 :07 / :37
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "cloud/gen_sub.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sub-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate subscription
+        run: |
+          python cloud/gen_sub.py
+          echo "---- 生成结果 ----"
+          wc -l sub_final.txt
+          head -3 sub_final.txt
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- sub_final.txt; then
+            echo "订阅内容无变化，跳过提交"
+            exit 0
+          fi
+          git add sub_final.txt
+          git commit -m "chore: auto update subscription $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
