@@ -3,7 +3,7 @@ name: Auto Update Subscription
 on:
   schedule:
     # 每 30 分钟运行（UTC）。避开整点高峰，错开为 :07 / :37
-    - cron: "*/10 * * * *"
+    - cron: "7,37 * * * *"
   workflow_dispatch:
   push:
     paths:
@@ -47,4 +47,16 @@ jobs:
             exit 0
           fi
           git commit -m "chore: auto update subscription $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push
+
+          # 并发触发（定时器 + 手动 + push）时可能撞车，失败就拉取后重试
+          for i in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "推送成功（第 $i 次尝试）"
+              exit 0
+            fi
+            echo "推送被拒，第 $i 次重试：先同步远端"
+            git pull --rebase --autostash -X ours origin main || true
+            sleep $((i * 3))
+          done
+          echo "连续 5 次推送失败"
+          exit 1
