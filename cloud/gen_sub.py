@@ -18,6 +18,7 @@ import ssl
 import sys
 import json
 import time
+import base64
 import random
 import socket
 import hashlib
@@ -281,7 +282,14 @@ def main():
     with open(OUTPUT, "w", encoding="utf-8", newline="\n") as f:
         f.write(body)
 
+    # 同时输出 base64 版本：部分客户端（含旧版 Karing 订阅导入）偏好 base64 编码
+    b64_path = os.path.join(os.path.dirname(os.path.abspath(OUTPUT)) if os.path.dirname(OUTPUT) else ".",
+                            "sub_final_b64.txt")
+    with open(b64_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(base64.b64encode(body.encode("utf-8")).decode("ascii"))
+
     log(f"已写入 {OUTPUT}：{len(links)} 个节点")
+    log(f"已写入 {b64_path}：base64 版本")
     log(f"延迟区间：{alive[0]['latency']}ms ~ {alive[-1]['latency']}ms")
     for n in picked[:5]:
         log(f"  示例 {n['ip']}:{n['port']} {n['latency']}ms status={n['status']}")

@@ -41,7 +41,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add sub_final.txt
+          git add sub_final.txt sub_final_b64.txt
           if git diff --cached --quiet; then
             echo "订阅内容无变化，跳过提交"
             exit 0
