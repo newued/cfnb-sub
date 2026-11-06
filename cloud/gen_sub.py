@@ -28,12 +28,14 @@ from urllib.request import Request, urlopen
 
 # ---------------- 配置 ----------------
 # 生成器版本，用于追溯订阅由哪一版逻辑产出
-GEN_VERSION = "v2026.11.04-1"
+GEN_VERSION = "v2026.11.06-1"
+# 2026-11-06 核实后移除两个失效源：
+#   cf.090227.xyz/cmcc-ip.txt 已改版为 HTML 页面（parse_all 得 0 条）
+#   cmliu/CloudFlareIPSelector/main/ip.txt 返回 404
+# 二者连续多次运行贡献均为 0，保留只会产生无效请求与误导性日志。
 SOURCES = [
     "https://zip.cm.edu.kg/all.txt",
     "https://countrymerge.pages.dev/all.txt",
-    "https://cf.090227.xyz/cmcc-ip.txt",
-    "https://raw.githubusercontent.com/cmliu/CloudFlareIPSelector/main/ip.txt",
 ]
 
 TARGET_HOST = "xiaogoutiaowuji.pages.dev"
@@ -49,7 +51,7 @@ FETCH_TIMEOUT = 15
 PROBE_TIMEOUT = 4
 PROBE_WORKERS = 64
 MAX_CANDIDATES = 700        # 参与探测的最大候选数（只收 101，通过率低，需大样本）
-KEEP_FASTEST = 12           # 保留延迟最低的 N 个
+CF_SHARE = 0.40             # 最终入选里 CF 官方段的配额；本机移动实测第三方更快
 OUTPUT = os.environ.get("SUB_OUTPUT", "sub_final.txt")
 
 CF_CIDRS = [
@@ -84,6 +86,19 @@ def fetch(url):
 
 
 IP_PORT_RE = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?")
+
+
+def load_previous(path):
+    """读取上一轮订阅里的节点 IP，用于跨轮稳定性优先。
+
+    GitHub Runner 的延迟抖动会让每小时产出大幅换血（实测相邻两轮仅 4/30 重合）。
+    只对「本轮仍通过 101 探测」的上轮节点加权，失效节点不会被保留。
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return {m.group(1) for line in f if (m := IP_PORT_RE.search(line))}
+    except OSError:
+        return set()
 
 
 def parse_all(text):
@@ -242,12 +257,18 @@ def main():
     else:
         log(f"延迟过滤跳过：<=2500ms 仅 {len(fast_enough)} 个，放宽标准")
 
-    alive.sort(key=lambda n: n["latency"])
+    # Runner 位于美国，其延迟不能代表中国大陆的实际体验（实测两者几乎不相关），
+    # 因此把「沿用上轮仍存活的节点」放在首位，抑制每小时无意义的大换血；
+    # 同组内仍按 Runner 延迟排序，只作为弱参考，不作为国内质量的判据。
+    prev_ips = load_previous(OUTPUT)
+    alive.sort(key=lambda n: (0 if n["ip"] in prev_ips else 1, n["latency"]))
+    log(f"上轮节点 {len(prev_ips)} 个，本轮仍存活 {sum(1 for n in alive if n['ip'] in prev_ips)} 个")
 
-    # 采样策略：限制同一 /16 网段数量，避免某一整段在国内不可达时批量失效；
-    # 同时优先选用 Cloudflare 官方段（国内可达性显著优于第三方中转段）。
+    # 采样策略：限制同一 /16 网段数量，避免某一整段在国内不可达时批量失效。
+    # CF 官方段配额由 CF_SHARE 控制；2026-11-06 本机移动实测第三方段
+    # 平均 1086ms、CF 官方段 1411ms，故由原先 0.65 下调。
     MAX_PER_NET = 2
-    CF_QUOTA = int(NODE_COUNT * 0.65)
+    CF_QUOTA = int(NODE_COUNT * CF_SHARE)
     picked = []
     net_count = {}
 
@@ -276,7 +297,9 @@ def main():
             if n not in picked:
                 picked.append(n)
 
+    kept = sum(1 for n in picked if n["ip"] in prev_ips)
     log(f"网段分布：{len(net_count)} 个 /16，单段最多 {MAX_PER_NET} 个；CF 官方段 {sum(1 for n in picked if n['cf'])} 个")
+    log(f"跨轮稳定性：沿用上轮 {kept}/{len(picked)} 个")
 
     links = [build_link(n, i) for i, n in enumerate(picked)]
     body = "\n".join(links) + "\n"
